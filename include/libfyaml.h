@@ -5214,7 +5214,7 @@ fy_version_directive_token_version(struct fy_token *fyt)
 	FY_EXPORT;
 
 /**
- * fy_scalar_token_style() - Return the style of a scalar token
+ * fy_scalar_token_get_style() - Return the style of a scalar token
  *
  * Retrieve the style of a scalar token.
  *
