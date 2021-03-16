@@ -31,8 +31,8 @@
 #define ARRAY_SIZE(x) ((sizeof(x)/sizeof((x)[0])))
 #endif
 
-// #undef DEBUG_EXPR
-#define DEBUG_EXPR
+#undef DEBUG_EXPR
+// #define DEBUG_EXPR
 
 const char *fy_walk_result_type_txt[FWRT_COUNT] = {
 	[fwrt_node_ref]	= "node-ref",
@@ -841,9 +841,11 @@ int fy_path_fetch_dot_method(struct fy_path_parser *fypp, int c)
 		if ((size_t)i != strlen(method))
 			continue;
 
+#ifdef DEBUG_EXPR
 		fyr_notice(fyr, "%s: method = \"%s\", i=%d strlen(method)=%zu, \"%.*s\"\n", __func__,
 				method, i, strlen(method),
 				i, (char *)fy_reader_ensure_lookahead(fyr, i, NULL));
+#endif
 
 		if (!memcmp(fy_reader_ensure_lookahead(fyr, i, NULL), method, i))
 			break;
@@ -855,7 +857,9 @@ int fy_path_fetch_dot_method(struct fy_path_parser *fypp, int c)
 
 	fytt = shorthand[j].type;
 
+#ifdef DEBUG_EXPR
 	fyr_notice(fyr, "%s: found method = %s\n", __func__, method);
+#endif
 
 	handlep = fy_reader_fill_atom_a(fyr, i);
 
@@ -2030,7 +2034,7 @@ int evaluate_new(struct fy_path_parser *fypp)
 		/* pop the top in either case */
 		exprr = fy_expr_stack_pop(&fypp->operands);
 		if (!exprr) {
-			fyr_notice(fyr, "ROOT value (with no arguments)\n");
+			// fyr_notice(fyr, "ROOT value (with no arguments)\n");
 
 			/* conver to root and push to operands */
 			expr->type = fpet_root;
@@ -2051,7 +2055,7 @@ int evaluate_new(struct fy_path_parser *fypp)
 		    (!(exprl = fy_expr_stack_peek(&fypp->operands)) ||
 		     (expr_peek && fy_path_expr_order(exprl, expr_peek) <= 0))) {
 
-			fyr_notice(fyr, "ROOT operator (with arguments)\n");
+			// fyr_notice(fyr, "ROOT operator (with arguments)\n");
 
 			exprl = fy_path_expr_alloc_recycle(fypp);
 			fyr_error_check(fyr, exprl, err_out,
@@ -2063,7 +2067,8 @@ int evaluate_new(struct fy_path_parser *fypp)
 			expr->fyt = NULL;
 
 		} else if (!(exprl = fy_expr_stack_pop(&fypp->operands))) {
-			fyr_notice(fyr, "COLLECTION operator\n");
+
+			// fyr_notice(fyr, "COLLECTION operator\n");
 
 			exprl = exprr;
 
@@ -2079,7 +2084,7 @@ int evaluate_new(struct fy_path_parser *fypp)
 		} else {
 			assert(exprr && exprl);
 
-			fyr_notice(fyr, "CHAIN operator\n");
+			// fyr_notice(fyr, "CHAIN operator\n");
 		}
 
 		/* we don't need the chain operator now */
@@ -2216,8 +2221,6 @@ int evaluate_new(struct fy_path_parser *fypp)
 		expr->type = fpet_scalar_expr;
 		expr->scan_mode = fypp->scan_mode;
 
-		fyr_warning(fyr, "expr scan_mode %s\n", path_parser_scan_mode_txt[expr->scan_mode]);
-
 		expr->fyt = expr_lr_to_token_mark(exprl, exprr, fypp->fyi);
 
 		exprt = fy_expr_stack_pop(&fypp->operands);
@@ -2228,7 +2231,9 @@ int evaluate_new(struct fy_path_parser *fypp)
 
 		if (exprl->scan_mode != fyppsm_none) {
 			fypp->scan_mode = exprl->scan_mode;
-			fyr_warning(fyr, "poping scan_mode %s\n", path_parser_scan_mode_txt[fypp->scan_mode]);
+#ifdef DEBUG_EXPR
+			fyr_notice(fyr, "poping scan_mode %s\n", path_parser_scan_mode_txt[fypp->scan_mode]);
+#endif
 		}
 
 		/* we don't need the parentheses operators */
@@ -2349,7 +2354,6 @@ fy_path_parse_expression(struct fy_path_parser *fypp)
 			fyr_error_check(fyr, !ret, err_out, "push_operand() failed\n");
 			expr = NULL;
 
-			fy_notice(fypp->cfg.diag, "> pushed as operand\n");
 			continue;
 		}
 
@@ -2383,10 +2387,12 @@ fy_path_parse_expression(struct fy_path_parser *fypp)
 			}
 		}
 
+#ifdef DEBUG_EXPR
 		fy_notice(fypp->cfg.diag, "operator stack (before)\n");
 		fy_expr_stack_dump(fypp->cfg.diag, &fypp->operators);
 		fy_notice(fypp->cfg.diag, "operand stack (before)\n");
 		fy_expr_stack_dump(fypp->cfg.diag, &fypp->operands);
+#endif
 
 		old_scan_mode = fypp->scan_mode;
 
@@ -2405,11 +2411,8 @@ fy_path_parse_expression(struct fy_path_parser *fypp)
 
 			ret = evaluate_new(fypp);
 			/* evaluate will print diagnostic on error */
-			if (ret < 0) {
-				fy_notice(fypp->cfg.diag, "> evaluate (prec) error\n");
+			if (ret < 0)
 				goto err_out;
-			}
-
 
 		} else if (expr->type == fpet_lparen) {
 
@@ -2452,31 +2455,35 @@ fy_path_parse_expression(struct fy_path_parser *fypp)
 				if (expr->type == fpet_div && fypp->paren_nest_level == 0) {
 					expr->type = fpet_chain;
 					fypp->scan_mode = fyppsm_path_expr;
+
+					/* mode change means evaluate */
+					ret = evaluate_new(fypp);
+					/* evaluate will print diagnostic on error */
+					if (ret < 0)
+						goto err_out;
+
 					break;
 				}
 				break;
 			}
 
+			if (old_scan_mode != fypp->scan_mode) {
 #ifdef DEBUG_EXPR
-			if (old_scan_mode != fypp->scan_mode)
 				fyr_notice(fyr, "scan_mode %s -> %s\n",
 						path_parser_scan_mode_txt[old_scan_mode],
 						path_parser_scan_mode_txt[fypp->scan_mode]);
 #endif
+			}
 
 			ret = -1;
 			while ((expr_top = fy_expr_stack_peek(&fypp->operators)) != NULL &&
 				fy_path_expr_type_prec(expr->type) <= fy_path_expr_type_prec(expr_top->type) &&
 				expr_top->type != fpet_lparen) {
 
-				fy_notice(fypp->cfg.diag, "> eval (prec)\n");
-
 				ret = evaluate_new(fypp);
 				/* evaluate will print diagnostic on error */
-				if (ret < 0) {
-					fy_notice(fypp->cfg.diag, "> evaluate (prec) error\n");
+				if (ret < 0)
 					goto err_out;
-				}
 			}
 
 			/* push the operator */
@@ -2485,17 +2492,17 @@ fy_path_parse_expression(struct fy_path_parser *fypp)
 			expr = NULL;
 		}
 
+#ifdef DEBUG_EXPR
 		fy_notice(fypp->cfg.diag, "operator stack (after)\n");
 		fy_expr_stack_dump(fypp->cfg.diag, &fypp->operators);
 		fy_notice(fypp->cfg.diag, "operand stack (after)\n");
 		fy_expr_stack_dump(fypp->cfg.diag, &fypp->operands);
+#endif
 
 	}
 
-	if (fypp->stream_error) {
-		fy_notice(fypp->cfg.diag, "> stream error\n");
+	if (fypp->stream_error)
 		goto err_out;
-	}
 
 	FYR_PARSE_ERROR_CHECK(fyr, 0, 1, FYEM_PARSE,
 			fypp->stream_error || (fyt && fyt->type == FYTT_STREAM_END), err_out,
@@ -2519,10 +2526,8 @@ fy_path_parse_expression(struct fy_path_parser *fypp)
 
 		ret = evaluate_new(fypp);
 		/* evaluate will print diagnostic on error */
-		if (ret < 0) {
-			fy_notice(fypp->cfg.diag, "> evaluate (rem) error\n");
+		if (ret < 0)
 			goto err_out;
-		}
 
 	}
 
@@ -2536,16 +2541,15 @@ fy_path_parse_expression(struct fy_path_parser *fypp)
 			fy_expr_stack_size(&fypp->operands) == 0, err_out,
 			"Operand stack contains more than 1 value at end");
 
-	fy_notice(fypp->cfg.diag, "> return expr\n");
-
 	return expr;
 
 err_out:
-	// fy_notice(fypp->cfg.diag, "operator stack\n");
-	// dump_operator_stack(fypp);
-	// fy_notice(fypp->cfg.diag, "operand stack\n");
-	// dump_operand_stack(fypp);
-	fy_notice(fypp->cfg.diag, "> error expr\n");
+#ifdef DEBUG_EXPR
+	fy_notice(fypp->cfg.diag, "operator stack (error)\n");
+	fy_expr_stack_dump(fypp->cfg.diag, &fypp->operators);
+	fy_notice(fypp->cfg.diag, "operand stack (error)\n");
+	fy_expr_stack_dump(fypp->cfg.diag, &fypp->operands);
+#endif
 	fypp->stream_error = true;
 	return NULL;
 }
