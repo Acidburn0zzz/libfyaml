@@ -162,4 +162,7 @@ bool fy_document_is_colorized(struct fy_document *fyd);
 bool fy_document_is_accelerated(struct fy_document *fyd);
 bool fy_document_can_be_accelerated(struct fy_document *fyd);
 
+/* TODO move to main include */
+struct fy_node *fy_node_collection_iterate(struct fy_node *fyn, void **prevp);
+
 #endif
